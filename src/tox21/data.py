@@ -5,6 +5,7 @@ import numpy as np
 import polars as pl
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
+from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.rdBase import BlockLogs
 
 DATA_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/tox21.csv.gz"
@@ -55,3 +56,43 @@ def morgan_fingerprints(
             mol = Chem.MolFromSmiles(s)
             fingerprints.append(gen.GetFingerprintAsNumPy(mol))
     return np.stack(fingerprints)
+
+
+def murcko_scaffolds(smiles: list[str] | pl.Series) -> list[str]:
+    """Return the Bemis-Murcko scaffold SMILES of each molecule."""
+    with BlockLogs():
+        return [
+            MurckoScaffold.MurckoScaffoldSmiles(smiles=s, includeChirality=False)
+            for s in smiles
+        ]
+
+
+def scaffold_split(
+    smiles: list[str] | pl.Series, frac_train: float = 0.8, frac_val: float = 0.1
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Split molecules into train/val/test so no scaffold spans two splits."""
+    groups = (
+        pl.DataFrame({"scaffold": murcko_scaffolds(smiles)})
+        .with_row_index("idx")
+        .group_by("scaffold")
+        .agg(pl.col("idx"))
+        .with_columns(size=pl.col("idx").list.len())
+        .sort(["size", "scaffold"], descending=[True, False])
+        .get_column("idx")
+        .to_list()
+    )
+
+    n = len(smiles)
+    train_size = frac_train * n
+    val_size = frac_val * n
+
+    train, val, test = [], [], []
+    for group in groups:
+        if len(train) + len(group) <= train_size:
+            train.extend(group)
+        elif len(val) + len(group) <= val_size:
+            val.extend(group)
+        else:
+            test.extend(group)
+
+    return np.array(train), np.array(val), np.array(test)
