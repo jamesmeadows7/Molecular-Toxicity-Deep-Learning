@@ -12,6 +12,7 @@ dependencies = [
     "polars>=2.0.0",
     "rdkit>=2026.9.1",
     "scikit-learn>=1.9.1",
+    "torch>=2.14.1",
 ]
 
 [build-system]
