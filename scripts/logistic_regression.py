@@ -45,7 +45,7 @@ for class_weight in [None, "balanced"]:
                     "model": "lr",
                     "class_weight": str(class_weight),
                     "seed": 0,
-                    "split": "val",
+                    "split": split,
                     "task": task,
                     "auc": auc,
                 }
