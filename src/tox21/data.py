@@ -1,3 +1,5 @@
+"""Tox21 dataset loading, featurisation and scaffold splitting."""
+
 import urllib.request
 from pathlib import Path
 

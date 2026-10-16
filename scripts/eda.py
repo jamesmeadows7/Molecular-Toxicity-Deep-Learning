@@ -3,9 +3,9 @@
 import polars as pl
 from rdkit import Chem
 
-from tox21.data import TASKS, load_tox21
+from tox21.data import TASKS, download_tox21
 
-df = load_tox21()
+df = pl.read_csv(download_tox21())  # raw data
 print(f"Loaded {df.height} molecules, {df.width} columns")
 
 # --- Labels per Task ---
@@ -56,7 +56,7 @@ n_parsed = df["canonical"].drop_nulls().len()
 n_unique = df["canonical"].drop_nulls().n_unique()
 print(f"{n_parsed} parsed, {n_unique} unique, {n_parsed - n_unique} duplicates")
 
-print(df.select("n_atoms").describe())
+print(df["n_atoms"].describe())
 
 # a '.' separates disconnected fragments
 n_fragmented = df["smiles"].str.contains(".", literal=True).sum()
