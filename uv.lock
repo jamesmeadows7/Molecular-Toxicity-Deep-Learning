@@ -7,12 +7,14 @@ name = "molecular-toxicity-deep-learning"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "polars" },
     { name = "rdkit" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=2.5.4" },
     { name = "polars", specifier = ">=2.0.0" },
     { name = "rdkit", specifier = ">=2026.9.1" },
 ]
