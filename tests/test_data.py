@@ -14,6 +14,7 @@ from tox21.data import (
     murcko_scaffolds,
     one_hot,
     scaffold_split,
+    smiles_to_graph,
 )
 
 
@@ -95,3 +96,35 @@ def test_atom_features_benzene_carbon():
     )
     assert len(encoding) == 25
     assert encoding == expected
+
+
+def test_smiles_to_graph_ethanol():
+    graph = smiles_to_graph("CCO")
+    x = graph.x
+    assert x is not None
+    assert x.shape == (3, 25)
+    edge_index = graph.edge_index
+    assert edge_index is not None
+    assert edge_index.shape == (2, 4)
+    edges = set(map(tuple, edge_index.t().tolist()))
+    assert edges == {(0, 1), (1, 0), (1, 2), (2, 1)}
+
+
+def test_smiles_to_graph_single_atom():
+    graph = smiles_to_graph("[Na+]")
+    x = graph.x
+    assert x is not None
+    assert x.shape == (1, 25)
+    edge_index = graph.edge_index
+    assert edge_index is not None
+    assert edge_index.shape == (2, 0)
+
+
+def test_smiles_to_graph_benzene():
+    graph = smiles_to_graph("c1ccccc1")
+    x = graph.x
+    assert x is not None
+    assert x.shape == (6, 25)
+    edge_index = graph.edge_index
+    assert edge_index is not None
+    assert edge_index.shape == (2, 12)

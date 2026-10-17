@@ -27,3 +27,8 @@ module-name = "tox21"
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:`torch.jit.script` is deprecated:FutureWarning",
+]

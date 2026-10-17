@@ -5,10 +5,12 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+import torch
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.rdBase import BlockLogs
+from torch_geometric.data import Data
 
 DATA_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/tox21.csv.gz"
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -88,6 +90,23 @@ def atom_features(atom: Chem.Atom) -> list[int]:
         + one_hot(atom.GetHybridization(), HYBRIDISATIONS)
         + [int(atom.GetIsAromatic())]
     )
+
+
+def smiles_to_graph(smiles: str) -> Data:
+    """Convert a SMILES string to a PyG graph."""
+    mol = Chem.MolFromSmiles(smiles)
+    x = torch.tensor(
+        [atom_features(atom) for atom in mol.GetAtoms()], dtype=torch.float32
+    )
+    pairs = []
+    for bond in mol.GetBonds():
+        pairs.append((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+        pairs.append((bond.GetEndAtomIdx(), bond.GetBeginAtomIdx()))
+    if pairs:
+        edge_index = torch.tensor(pairs, dtype=torch.long).t().contiguous()
+    else:
+        edge_index = torch.empty((2, 0), dtype=torch.long)
+    return Data(x=x, edge_index=edge_index)
 
 
 def murcko_scaffolds(smiles: list[str] | pl.Series) -> list[str]:
