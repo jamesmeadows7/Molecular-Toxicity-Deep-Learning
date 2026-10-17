@@ -2,7 +2,9 @@
 
 import numpy as np
 import pytest
+import torch
 from rdkit import Chem
+from torch_geometric.loader import DataLoader
 
 from tox21.data import (
     DEGREES,
@@ -10,6 +12,7 @@ from tox21.data import (
     FORMAL_CHARGES,
     HYBRIDISATIONS,
     atom_features,
+    build_graphs,
     load_tox21,
     murcko_scaffolds,
     one_hot,
@@ -128,3 +131,17 @@ def test_smiles_to_graph_benzene():
     edge_index = graph.edge_index
     assert edge_index is not None
     assert edge_index.shape == (2, 12)
+
+
+def test_build_graphs_label_shapes():
+    smiles = ["CCO", "c1ccccc1", "[Na+]"]
+    Y = np.full((3, 12), np.nan, dtype=np.float32)
+    Y[:, 0] = [1, 0, 1]
+    graphs = build_graphs(smiles, Y)
+    for graph in graphs:
+        y = graph.y
+        assert isinstance(y, torch.Tensor)
+        assert y.shape == (1, 12)
+    batch = next(iter(DataLoader(graphs, batch_size=3)))
+    assert batch.y.shape == (3, 12)
+    assert torch.isnan(batch.y[:, 1:]).all()

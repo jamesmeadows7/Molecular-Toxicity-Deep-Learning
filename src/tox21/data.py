@@ -109,6 +109,17 @@ def smiles_to_graph(smiles: str) -> Data:
     return Data(x=x, edge_index=edge_index)
 
 
+def build_graphs(smiles: list[str] | pl.Series, Y: np.ndarray) -> list[Data]:
+    """Convert molecules to PyG graphs with labels attached."""
+    graphs = []
+    with BlockLogs():
+        for s, y in zip(smiles, Y):
+            graph = smiles_to_graph(s)
+            graph.y = torch.tensor(y, dtype=torch.float32).unsqueeze(0)
+            graphs.append(graph)
+    return graphs
+
+
 def murcko_scaffolds(smiles: list[str] | pl.Series) -> list[str]:
     """Return the Bemis-Murcko scaffold SMILES of each molecule."""
     with BlockLogs():
