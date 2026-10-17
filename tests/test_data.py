@@ -1,9 +1,20 @@
-"""Tests for data loading and the scaffold split."""
+"""Tests for data loading, featurisation and the scaffold split."""
 
 import numpy as np
 import pytest
+from rdkit import Chem
 
-from tox21.data import load_tox21, murcko_scaffolds, one_hot, scaffold_split
+from tox21.data import (
+    DEGREES,
+    ELEMENTS,
+    FORMAL_CHARGES,
+    HYBRIDISATIONS,
+    atom_features,
+    load_tox21,
+    murcko_scaffolds,
+    one_hot,
+    scaffold_split,
+)
 
 
 @pytest.fixture(scope="module")
@@ -56,3 +67,31 @@ def test_one_hot_choice():
 def test_one_hot_other():
     result = one_hot("Hg", ["C", "N", "O"])
     assert result == [0, 0, 0, 1]
+
+
+def test_atom_features_ethanol_oxygen():
+    atom = Chem.MolFromSmiles("CCO").GetAtomWithIdx(2)
+    encoding = atom_features(atom)
+    expected = (
+        one_hot("O", ELEMENTS)
+        + one_hot(1, DEGREES)
+        + one_hot(0, FORMAL_CHARGES)
+        + one_hot(Chem.rdchem.HybridizationType.SP3, HYBRIDISATIONS)
+        + [0]
+    )
+    assert len(encoding) == 25
+    assert encoding == expected
+
+
+def test_atom_features_benzene_carbon():
+    atom = Chem.MolFromSmiles("c1ccccc1").GetAtomWithIdx(0)
+    encoding = atom_features(atom)
+    expected = (
+        one_hot("C", ELEMENTS)
+        + one_hot(2, DEGREES)
+        + one_hot(0, FORMAL_CHARGES)
+        + one_hot(Chem.rdchem.HybridizationType.SP2, HYBRIDISATIONS)
+        + [1]
+    )
+    assert len(encoding) == 25
+    assert encoding == expected

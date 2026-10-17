@@ -28,6 +28,15 @@ TASKS = [
     "SR-p53",
 ]
 
+ELEMENTS = ["C", "O", "N", "Cl", "S", "F", "Br", "P", "I"]
+DEGREES = [0, 1, 2, 3, 4]
+FORMAL_CHARGES = [-1, 0, 1]
+HYBRIDISATIONS = [
+    Chem.rdchem.HybridizationType.SP,
+    Chem.rdchem.HybridizationType.SP2,
+    Chem.rdchem.HybridizationType.SP3,
+]
+
 
 def download_tox21() -> Path:
     """Download the Tox21 CSV into data/."""
@@ -61,12 +70,24 @@ def morgan_fingerprints(
 
 
 def one_hot(value, choices: list) -> list[int]:
+    """One-hot encode values over choices."""
     encoding = [0] * (len(choices) + 1)
     if value in choices:
         encoding[choices.index(value)] = 1
     else:
         encoding[-1] = 1
     return encoding
+
+
+def atom_features(atom: Chem.Atom) -> list[int]:
+    """Return a 25-long feature vector for an RDKit atom."""
+    return (
+        one_hot(atom.GetSymbol(), ELEMENTS)
+        + one_hot(atom.GetDegree(), DEGREES)
+        + one_hot(atom.GetFormalCharge(), FORMAL_CHARGES)
+        + one_hot(atom.GetHybridization(), HYBRIDISATIONS)
+        + [int(atom.GetIsAromatic())]
+    )
 
 
 def murcko_scaffolds(smiles: list[str] | pl.Series) -> list[str]:
