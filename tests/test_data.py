@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from tox21.data import load_tox21, murcko_scaffolds, scaffold_split
+from tox21.data import load_tox21, murcko_scaffolds, one_hot, scaffold_split
 
 
 @pytest.fixture(scope="module")
@@ -46,3 +46,13 @@ def test_split_is_deterministic(smiles, split):
     assert np.array_equal(train1, train2)
     assert np.array_equal(val1, val2)
     assert np.array_equal(test1, test2)
+
+
+def test_one_hot_choice():
+    result = one_hot("N", ["C", "N", "O"])
+    assert result == [0, 1, 0, 0]
+
+
+def test_one_hot_other():
+    result = one_hot("Hg", ["C", "N", "O"])
+    assert result == [0, 0, 0, 1]

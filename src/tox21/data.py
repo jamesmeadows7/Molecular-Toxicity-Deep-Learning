@@ -60,6 +60,15 @@ def morgan_fingerprints(
     return np.stack(fingerprints)
 
 
+def one_hot(value, choices: list) -> list[int]:
+    encoding = [0] * (len(choices) + 1)
+    if value in choices:
+        encoding[choices.index(value)] = 1
+    else:
+        encoding[-1] = 1
+    return encoding
+
+
 def murcko_scaffolds(smiles: list[str] | pl.Series) -> list[str]:
     """Return the Bemis-Murcko scaffold SMILES of each molecule."""
     with BlockLogs():
