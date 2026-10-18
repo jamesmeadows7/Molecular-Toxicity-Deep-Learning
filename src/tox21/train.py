@@ -204,7 +204,7 @@ def run(config: dict) -> pl.DataFrame:
                         }
                     )
 
-    Path(config["output"]).parent.mkdir(exist_ok=True)
+    Path(config["output"]).parent.mkdir(parents=True, exist_ok=True)
     results = pl.DataFrame(rows)
     results.write_csv(config["output"])
 
