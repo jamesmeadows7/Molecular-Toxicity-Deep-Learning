@@ -75,3 +75,37 @@ per_task = (
 
 with pl.Config(tbl_rows=13):
     print(per_task.with_columns(pl.exclude("task").round(3)))
+
+
+# GIN vs RF
+gin_vs_rf = (
+    final.filter(pl.col("split") == "test", pl.col("model").is_in(["gnn", "rf"]))
+    .group_by("task", "model")
+    .agg(mean=pl.col("auc").mean(), lo=pl.col("auc").min(), hi=pl.col("auc").max())
+    .pivot(on="model", index="task", values=["mean", "lo", "hi"])
+)
+gin_vs_rf = gin_vs_rf.with_columns(
+    diff=pl.col("mean_gnn") - pl.col("mean_rf"),
+    consistent=(pl.col("lo_gnn") > pl.col("hi_rf"))
+    | (pl.col("hi_gnn") < pl.col("lo_rf")),
+).sort("diff", descending=True)
+
+gin_vs_rf.write_csv("results/gin_vs_rf.csv")
+with pl.Config(tbl_rows=13):
+    print(
+        gin_vs_rf.select(
+            "task", "mean_rf", "mean_gnn", "diff", "consistent"
+        ).with_columns(pl.col(pl.Float64).round(3))
+    )
+
+
+counts = gin_vs_rf.select(
+    gin_higher=(pl.col("diff") > 0).sum(),
+    gin_consistent=(pl.col("consistent") & (pl.col("diff") > 0)).sum(),
+    rf_consistent=(pl.col("consistent") & (pl.col("diff") < 0)).sum(),
+).row(0, named=True)
+
+print(
+    f"GIN higher on {counts['gin_higher']} of 12 tasks; consistent wins: "
+    f"GIN {counts['gin_consistent']}, RF {counts['rf_consistent']}"
+)
