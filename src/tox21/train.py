@@ -10,12 +10,24 @@ import torch
 import yaml
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+from torch_geometric.data import Batch
 
 from tox21.data import TASKS, load_tox21, morgan_fingerprints, scaffold_split
 from tox21.evaluate import per_task_auc
 from tox21.losses import compute_pos_weight, masked_bce_with_logits
 from tox21.models import MLP
 from tox21.utils import get_device, set_seed
+
+
+def forward_batch(
+    model: nn.Module, batch: Batch | list[torch.Tensor], device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Move a PyG Batch or [x, y] list to device."""
+    if isinstance(batch, Batch):  # PyG batch
+        batch = batch.to(device)  # ty: ignore[unresolved-attribute]
+        return model(batch.x, batch.edge_index, batch.batch), batch.y
+    xb, yb = batch  # MLP batch
+    return model(xb.to(device)), yb.to(device)
 
 
 def train_one_epoch(
@@ -28,9 +40,9 @@ def train_one_epoch(
     """Train one pass and return the mean batch loss."""
     model.train()
     total = 0.0
-    for xb, yb in loader:
-        xb, yb = xb.to(device), yb.to(device)
-        loss = masked_bce_with_logits(model(xb), yb, pos_weight)
+    for batch in loader:
+        logits, y = forward_batch(model, batch, device)
+        loss = masked_bce_with_logits(logits, y, pos_weight)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -38,11 +50,15 @@ def train_one_epoch(
     return total / len(loader)
 
 
-def predict(model: nn.Module, X: torch.Tensor, device: torch.device) -> np.ndarray:
+def predict(model: nn.Module, loader: DataLoader, device: torch.device) -> np.ndarray:
     """Return predicted probabilities."""
     model.eval()
+    probs = []
     with torch.no_grad():
-        return torch.sigmoid(model(X.to(device))).cpu().numpy()
+        for batch in loader:
+            logits, _ = forward_batch(model, batch, device)
+            probs.append(torch.sigmoid(logits).cpu())
+    return torch.cat(probs).numpy()
 
 
 def train_and_evaluate(
@@ -61,10 +77,20 @@ def train_and_evaluate(
     set_seed(seed)
     model = MLP(**model_params).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=training["lr"])
-    loader = DataLoader(
+    train_loader = DataLoader(
         TensorDataset(X[train], Y[train]),
         batch_size=training["batch_size"],
         shuffle=True,
+    )
+    val_loader = DataLoader(
+        TensorDataset(X[val], Y[val]),
+        batch_size=training["batch_size"],
+        shuffle=False,
+    )
+    test_loader = DataLoader(
+        TensorDataset(X[test], Y[test]),
+        batch_size=training["batch_size"],
+        shuffle=False,
     )
     Y_val = Y[val].numpy()
     Y_test = Y[test].numpy()
@@ -75,8 +101,8 @@ def train_and_evaluate(
     epochs_since_best = 0
 
     for epoch in range(training["max_epochs"]):
-        train_one_epoch(model, loader, optimizer, pos_weight, device)
-        val_auc = np.mean(per_task_auc(Y_val, predict(model, X[val], device)))
+        train_one_epoch(model, train_loader, optimizer, pos_weight, device)
+        val_auc = np.mean(per_task_auc(Y_val, predict(model, val_loader, device)))
 
         if val_auc > best_auc:
             best_auc = val_auc
@@ -91,8 +117,8 @@ def train_and_evaluate(
 
     assert best_state is not None
     model.load_state_dict(best_state)
-    val_aucs = per_task_auc(Y_val, predict(model, X[val], device))
-    test_aucs = per_task_auc(Y_test, predict(model, X[test], device))
+    val_aucs = per_task_auc(Y_val, predict(model, val_loader, device))
+    test_aucs = per_task_auc(Y_test, predict(model, test_loader, device))
     return val_aucs, test_aucs, best_epoch
 
 
