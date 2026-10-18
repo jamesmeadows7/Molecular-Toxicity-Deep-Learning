@@ -1,0 +1,13 @@
+model: mlp
+output: results/metrics_mlp.csv
+seeds: [0, 1, 2, 3, 4]
+
+model_params:
+  hidden_dims: [512, 256]
+  dropout: 0.2
+
+training:
+  batch_size: 128
+  lr: 0.001
+  max_epochs: 100
+  patience: 10

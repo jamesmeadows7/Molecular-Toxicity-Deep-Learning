@@ -1,11 +1,13 @@
-"""Train the multi-task MLP with masked BCE and early stopping on validation ROC-AUC."""
+"""Train a model on Tox21 with masked BCE and early stopping. Run with --config <yaml>."""
 
+import argparse
 import copy
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 import torch
+import yaml
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -14,11 +16,6 @@ from tox21.evaluate import per_task_auc
 from tox21.losses import compute_pos_weight, masked_bce_with_logits
 from tox21.models import MLP
 from tox21.utils import get_device, set_seed
-
-BATCH_SIZE = 128
-LR = 1e-3
-MAX_EPOCHS = 100
-PATIENCE = 10
 
 
 def train_one_epoch(
@@ -56,14 +53,18 @@ def train_and_evaluate(
     test: np.ndarray,
     seed: int,
     pos_weight: torch.Tensor | None,
+    model_params: dict,
+    training: dict,
     device: torch.device,
 ) -> tuple[list[float], list[float], int]:
     """Train one MLP with early stopping, returning per-task val AUCs, test AUCs and the best epoch."""
     set_seed(seed)
-    model = MLP().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    model = MLP(**model_params).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=training["lr"])
     loader = DataLoader(
-        TensorDataset(X[train], Y[train]), batch_size=BATCH_SIZE, shuffle=True
+        TensorDataset(X[train], Y[train]),
+        batch_size=training["batch_size"],
+        shuffle=True,
     )
     Y_val = Y[val].numpy()
     Y_test = Y[test].numpy()
@@ -73,7 +74,7 @@ def train_and_evaluate(
     best_state = None
     epochs_since_best = 0
 
-    for epoch in range(MAX_EPOCHS):
+    for epoch in range(training["max_epochs"]):
         train_one_epoch(model, loader, optimizer, pos_weight, device)
         val_auc = np.mean(per_task_auc(Y_val, predict(model, X[val], device)))
 
@@ -85,7 +86,7 @@ def train_and_evaluate(
         else:
             epochs_since_best += 1
 
-        if epochs_since_best >= PATIENCE:
+        if epochs_since_best >= training["patience"]:
             break
 
     assert best_state is not None
@@ -95,9 +96,12 @@ def train_and_evaluate(
     return val_aucs, test_aucs, best_epoch
 
 
-def main() -> None:
-    """Train the MLP over 5 seeds, with and without pos_weight."""
+def run(config: dict) -> None:
+    """Train the configured model over seeds, with and without pos_weight."""
     device = get_device()
+
+    model_params = config["model_params"]
+    training = config["training"]
 
     df = load_tox21()
     X = torch.from_numpy(morgan_fingerprints(df["smiles"]).astype(np.float32))
@@ -109,9 +113,9 @@ def main() -> None:
         pos_weight = (
             compute_pos_weight(Y[train].numpy()).to(device) if use_pos_weight else None
         )
-        for seed in range(5):
+        for seed in config["seeds"]:
             val_aucs, test_aucs, best_epoch = train_and_evaluate(
-                X, Y, train, val, test, seed, pos_weight, device
+                X, Y, train, val, test, seed, pos_weight, model_params, training, device
             )
             print(
                 f"pos_weight={use_pos_weight} seed={seed}: best epoch {best_epoch}, val {np.mean(val_aucs):.3f}, test {np.mean(test_aucs):.3f}"
@@ -129,9 +133,9 @@ def main() -> None:
                         }
                     )
 
-    Path("results").mkdir(exist_ok=True)
+    Path(config["output"]).parent.mkdir(exist_ok=True)
     results = pl.DataFrame(rows)
-    results.write_csv("results/metrics_mlp.csv")
+    results.write_csv(config["output"])
 
     per_seed = results.group_by("class_weight", "seed", "split").agg(
         mean_auc=pl.col("auc").mean()
@@ -145,6 +149,16 @@ def main() -> None:
         .sort("split", "class_weight")
     )
     print(summary)
+
+
+def main() -> None:
+    """Parse config and run the experiment."""
+    parser = argparse.ArgumentParser(description="Train a model on Tox21.")
+    parser.add_argument("--config", required=True, help="Path to a YAML config file.")
+    args = parser.parse_args()
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+    run(config)
 
 
 if __name__ == "__main__":
