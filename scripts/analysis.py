@@ -94,6 +94,7 @@ summary = (
     .group_by("model", "split")
     .agg(mean=pl.col("mean_auc").mean(), std=pl.col("mean_auc").std())
     .pivot(on="split", index="model", values=["mean", "std"])
+    .select("model", "mean_val", "std_val", "mean_test", "std_test")
     .sort(pl.col("model").cast(pl.Enum(MODEL_NAMES.keys())))
 )
 
@@ -139,6 +140,17 @@ gin_vs_rf = (
         std=pl.col("auc").std(),
     )
     .pivot(on="model", index="task", values=["mean", "lo", "hi", "std"])
+    .select(
+        "task",
+        "mean_rf",
+        "std_rf",
+        "mean_gnn",
+        "std_gnn",
+        "lo_rf",
+        "hi_rf",
+        "lo_gnn",
+        "hi_gnn",
+    )
 )
 gin_vs_rf = gin_vs_rf.with_columns(
     diff=pl.col("mean_gnn") - pl.col("mean_rf"),
