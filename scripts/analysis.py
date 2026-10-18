@@ -61,3 +61,17 @@ for row in summary.iter_rows(named=True):
     val = fmt(row["mean_val"], row["std_val"])
     test = fmt(row["mean_test"], row["std_test"])
     print(f"| {MODEL_NAMES[row['model']]} | {val} | {test} |")
+
+# per task analysis
+per_task = (
+    final.filter(pl.col("split") == "test")
+    .group_by("model", "task")
+    .agg(auc=pl.col("auc").mean())
+    .pivot(on="model", index="task", values="auc")
+    .select("task", *MODEL_NAMES.keys())
+    .with_columns(mean=pl.mean_horizontal(*MODEL_NAMES.keys()))
+    .sort("mean", descending=True)
+)
+
+with pl.Config(tbl_rows=13):
+    print(per_task.with_columns(pl.exclude("task").round(3)))
