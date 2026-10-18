@@ -10,13 +10,32 @@ import torch
 import yaml
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
+from torch_geometric.loader import DataLoader as GraphDataLoader
 
-from tox21.data import TASKS, load_tox21, morgan_fingerprints, scaffold_split
+from tox21.data import (
+    TASKS,
+    build_graphs,
+    load_tox21,
+    morgan_fingerprints,
+    scaffold_split,
+)
 from tox21.evaluate import per_task_auc
 from tox21.losses import compute_pos_weight, masked_bce_with_logits
-from tox21.models import MLP
+from tox21.models import GIN, MLP
 from tox21.utils import get_device, set_seed
+
+
+def prepare_data(
+    name: str, smiles: pl.Series, labels: np.ndarray
+) -> tuple[torch.Tensor, torch.Tensor] | list[Data]:
+    """Return model inputs: (fingerprints, labels) for MLP, graphs for GNN."""
+    if name == "mlp":
+        X = torch.from_numpy(morgan_fingerprints(smiles).astype(np.float32))
+        return X, torch.from_numpy(labels)
+    if name == "gnn":
+        return build_graphs(smiles, labels)
+    raise ValueError(f"Unknown model: {name!r}")
 
 
 def forward_batch(
@@ -61,39 +80,55 @@ def predict(model: nn.Module, loader: DataLoader, device: torch.device) -> np.nd
     return torch.cat(probs).numpy()
 
 
+def build_model(name: str, params: dict) -> nn.Module:
+    """Return an untrained MLP or GNN model built from config params."""
+    if name == "mlp":
+        return MLP(**params)
+    if name == "gnn":
+        return GIN(**params)
+    raise ValueError(f"Unknown model: {name!r}")
+
+
+def make_loader(
+    data: tuple[torch.Tensor, torch.Tensor] | list[Data],
+    idx: np.ndarray,
+    batch_size: int,
+    shuffle: bool,
+) -> DataLoader:
+    """Return a loader over the rows in idx."""
+    if isinstance(data, list):
+        return GraphDataLoader(
+            [data[i] for i in idx], batch_size=batch_size, shuffle=shuffle
+        )
+    X, Y = data
+    return DataLoader(
+        TensorDataset(X[idx], Y[idx]), batch_size=batch_size, shuffle=shuffle
+    )
+
+
 def train_and_evaluate(
-    X: torch.Tensor,
-    Y: torch.Tensor,
+    data: tuple[torch.Tensor, torch.Tensor] | list[Data],
+    labels: np.ndarray,
     train: np.ndarray,
     val: np.ndarray,
     test: np.ndarray,
     seed: int,
     pos_weight: torch.Tensor | None,
+    model_name: str,
     model_params: dict,
     training: dict,
     device: torch.device,
 ) -> tuple[list[float], list[float], int]:
-    """Train one MLP with early stopping, returning per-task val AUCs, test AUCs and the best epoch."""
+    """Train one model with early stopping. Return per-task val/test AUCs, test AUCs and best epoch."""
     set_seed(seed)
-    model = MLP(**model_params).to(device)
+    model = build_model(model_name, model_params).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=training["lr"])
-    train_loader = DataLoader(
-        TensorDataset(X[train], Y[train]),
-        batch_size=training["batch_size"],
-        shuffle=True,
-    )
-    val_loader = DataLoader(
-        TensorDataset(X[val], Y[val]),
-        batch_size=training["batch_size"],
-        shuffle=False,
-    )
-    test_loader = DataLoader(
-        TensorDataset(X[test], Y[test]),
-        batch_size=training["batch_size"],
-        shuffle=False,
-    )
-    Y_val = Y[val].numpy()
-    Y_test = Y[test].numpy()
+    batch_size = training["batch_size"]
+    train_loader = make_loader(data, train, batch_size, shuffle=True)
+    val_loader = make_loader(data, val, batch_size, shuffle=False)
+    test_loader = make_loader(data, test, batch_size, shuffle=False)
+    Y_val = labels[val]
+    Y_test = labels[test]
 
     best_auc = -np.inf
     best_epoch = 0
@@ -130,18 +165,28 @@ def run(config: dict) -> None:
     training = config["training"]
 
     df = load_tox21()
-    X = torch.from_numpy(morgan_fingerprints(df["smiles"]).astype(np.float32))
-    Y = torch.from_numpy(df.select(TASKS).to_numpy().astype(np.float32))
+    labels = df.select(TASKS).to_numpy().astype(np.float32)
+    data = prepare_data(config["model"], df["smiles"], labels)
     train, val, test = scaffold_split(df["smiles"])
 
     rows = []
     for use_pos_weight in [False, True]:
         pos_weight = (
-            compute_pos_weight(Y[train].numpy()).to(device) if use_pos_weight else None
+            compute_pos_weight(labels[train]).to(device) if use_pos_weight else None
         )
         for seed in config["seeds"]:
             val_aucs, test_aucs, best_epoch = train_and_evaluate(
-                X, Y, train, val, test, seed, pos_weight, model_params, training, device
+                data=data,
+                labels=labels,
+                train=train,
+                val=val,
+                test=test,
+                seed=seed,
+                pos_weight=pos_weight,
+                model_name=config["model"],
+                model_params=model_params,
+                training=training,
+                device=device,
             )
             print(
                 f"pos_weight={use_pos_weight} seed={seed}: best epoch {best_epoch}, val {np.mean(val_aucs):.3f}, test {np.mean(test_aucs):.3f}"
@@ -150,7 +195,7 @@ def run(config: dict) -> None:
                 for task, auc in zip(TASKS, aucs):
                     rows.append(
                         {
-                            "model": "mlp",
+                            "model": config["model"],
                             "class_weight": "balanced" if use_pos_weight else "None",
                             "seed": seed,
                             "split": split,

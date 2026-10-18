@@ -1,0 +1,14 @@
+model: gnn
+output: results/metrics_gnn.csv
+seeds: [0, 1, 2, 3, 4]
+
+model_params:
+  hidden_dim: 128
+  n_layers: 3
+  dropout: 0.2
+
+training:
+  batch_size: 128
+  lr: 0.001
+  max_epochs: 100
+  patience: 10
