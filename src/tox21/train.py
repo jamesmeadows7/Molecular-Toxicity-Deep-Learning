@@ -157,7 +157,7 @@ def train_and_evaluate(
     return val_aucs, test_aucs, best_epoch
 
 
-def run(config: dict) -> None:
+def run(config: dict) -> pl.DataFrame:
     """Train the configured model over seeds, with and without pos_weight."""
     device = get_device()
 
@@ -170,7 +170,7 @@ def run(config: dict) -> None:
     train, val, test = scaffold_split(df["smiles"])
 
     rows = []
-    for use_pos_weight in [False, True]:
+    for use_pos_weight in config["pos_weight"]:
         pos_weight = (
             compute_pos_weight(labels[train]).to(device) if use_pos_weight else None
         )
@@ -220,6 +220,8 @@ def run(config: dict) -> None:
         .sort("split", "class_weight")
     )
     print(summary)
+
+    return results
 
 
 def main() -> None:
