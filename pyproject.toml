@@ -1,7 +1,7 @@
 [project]
 name = "molecular-toxicity-deep-learning"
 version = "0.1.0"
-description = "Deep learning models for toxicity prediction on Tox21."
+description = "Predicting small-molecule toxicity from chemical structure with deep learning, using the Tox21 dataset from MoleculeNet."
 readme = "README.md"
 authors = [
     { name = "jamesmeadows7", email = "james.w.meadows@durham.ac.uk" }
